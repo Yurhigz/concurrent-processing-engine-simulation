@@ -22,6 +22,32 @@ func producer(value int, values chan int) {
 	close(values)
 }
 
+func fanin(ch1 chan int, ch2 chan int) chan int {
+	var wg sync.WaitGroup
+	wg.Add(2)
+	aggregatedChannel := make(chan int, cap(ch1)+cap(ch2))
+	go func() {
+		defer wg.Done()
+		for val := range ch1 {
+			aggregatedChannel <- val
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for val := range ch2 {
+			aggregatedChannel <- val
+		}
+
+	}()
+	go func() {
+		wg.Wait()
+		close(aggregatedChannel)
+
+	}()
+
+	return aggregatedChannel
+}
+
 func consumer(worker int, values chan int) {
 	for value := range values {
 		fmt.Printf("worker %v processed %v \n", worker, value)
@@ -30,16 +56,22 @@ func consumer(worker int, values chan int) {
 
 func main() {
 	wg := &sync.WaitGroup{}
-	values := make(chan int)
+
+	nbProcess := 100
+	ch1 := make(chan int, nbProcess)
+	ch2 := make(chan int, nbProcess)
 	workers := 3
 
-	go producer(10, values)
+	producer(nbProcess, ch1)
+	producer(nbProcess, ch2)
+
+	channel := fanin(ch1, ch2)
 
 	for w := range workers {
 		wg.Add(1)
 		go func(worker int) {
 			defer wg.Done()
-			consumer(w, values)
+			consumer(w, channel)
 		}(w)
 	}
 	wg.Wait()
